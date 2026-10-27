@@ -1,0 +1,399 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxmap Sort paso a paso</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: mesa de trabajo — arreglo original arriba, arreglo final A2 con sus zonas abajo, tablas de conteo debajo; código y contadores al costado */
+:root{
+  --bg:#E9EEF2; --surface:#F8FAFB; --ink:#16202B; --muted:#56636F; --line:#CBD4DC;
+  --sorted:#2D5C8A; --sorted-ink:#F3F7FA;
+  --pending:#F2D57E; --pending-ink:#3A2E0B;
+  --actual:#E0683A; --actual-ink:#1D0E07;
+  --zone-a:#D3E2EF; --zone-b:#E2DCEF; --zone-ink:#2D5C8A;
+  --compare:#16202B; --code-bg:#16202B; --code-ink:#DCE5EC; --code-hl:#E0683A33; --cell-hl:#E0683A40;
+  --f-display:'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+  --f-body:'Atkinson Hyperlegible', Verdana, sans-serif;
+  --f-mono:'JetBrains Mono', 'Courier New', monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10161D; --surface:#18212B; --ink:#E6ECF1; --muted:#9AA8B5; --line:#2C3946;
+  --sorted:#4F86BE; --sorted-ink:#0C1520; --pending:#D9BC62; --pending-ink:#241C05;
+  --actual:#F08452; --actual-ink:#1D0E07; --zone-a:#1F3347; --zone-b:#2D2840; --zone-ink:#8DB6DE;
+  --compare:#E6ECF1; --code-bg:#0B1016; --code-ink:#DCE5EC; --code-hl:#F0845238; --cell-hl:#F0845240;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10161D; --surface:#18212B; --ink:#E6ECF1; --muted:#9AA8B5; --line:#2C3946;
+  --sorted:#4F86BE; --sorted-ink:#0C1520; --pending:#D9BC62; --pending-ink:#241C05;
+  --actual:#F08452; --actual-ink:#1D0E07; --zone-a:#1F3347; --zone-b:#2D2840; --zone-ink:#8DB6DE;
+  --compare:#E6ECF1; --code-bg:#0B1016; --code-ink:#DCE5EC; --code-hl:#F0845238; --cell-hl:#F0845240;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:28px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--actual)}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(32px,5vw,52px);line-height:1.05;margin:0;text-wrap:balance}
+.lead{margin:0;max-width:68ch;color:var(--muted);font-size:17px}
+.phases{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;padding:0;list-style:none}
+.phases li{font-size:14px;font-weight:700;padding:5px 12px;border-radius:999px;border:1.5px solid var(--line);color:var(--muted)}
+.phases li.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.stage-wrap{padding:18px 18px 6px}
+.stage{position:relative;height:350px;width:100%}
+.rowlabel{position:absolute;left:0;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.card{position:absolute;top:0;left:0;height:56px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--f-mono);font-weight:600;font-size:20px;
+  transition:transform var(--dur,.45s) cubic-bezier(.3,.7,.3,1), background-color .25s, box-shadow .25s;
+  box-shadow:0 2px 0 rgba(0,0,0,.12)}
+.card.pending{background:var(--pending);color:var(--pending-ink)}
+.card.sorted{background:var(--sorted);color:var(--sorted-ink)}
+.card.actual{background:var(--actual);color:var(--actual-ink);box-shadow:0 10px 18px rgba(0,0,0,.22)}
+.card.focus,.card.comparing{outline:3px solid var(--compare);outline-offset:3px}
+.ghost{position:absolute;height:56px;border:2px dashed var(--line);border-radius:8px}
+.bslot{position:absolute;height:56px;border:2px solid var(--line);border-radius:8px;background:var(--surface)}
+.bslot.scan{border-color:var(--actual);border-style:dashed}
+.idx{position:absolute;height:18px;text-align:center;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.ctag{position:absolute;height:22px;text-align:center;font-family:var(--f-mono);font-size:13px;font-weight:600;color:var(--zone-ink);opacity:0;transition:opacity .2s}
+.ctag.on{opacity:1}
+.zone{position:absolute;border-radius:12px;opacity:0;transition:opacity .3s, box-shadow .2s}
+.zone.on{opacity:1}
+.zone.hl{box-shadow:0 0 0 3px var(--actual)}
+.zlabel{position:absolute;text-align:center;font-family:var(--f-mono);font-size:12px;font-weight:600;color:var(--zone-ink);opacity:0;transition:opacity .3s;white-space:nowrap}
+.zlabel.on{opacity:1}
+.tables{padding:4px 18px 16px;overflow-x:auto}
+.tables table{border-collapse:collapse;font-family:var(--f-mono);font-size:15px;font-variant-numeric:tabular-nums}
+.tables th,.tables td{border:1px solid var(--line);padding:6px 10px;text-align:center;min-width:42px;transition:background-color .2s}
+.tables th{font-weight:600;color:var(--muted)}
+.tables th.rl{text-align:left;color:var(--ink);font-family:var(--f-body);font-weight:700;min-width:130px}
+.tables td.hl{background:var(--cell-hl)}
+.tables td.empty{color:var(--muted)}
+.msg{padding:16px 18px;display:flex;gap:14px;align-items:flex-start;border-top:1px solid var(--line)}
+.msg .num{font-family:var(--f-mono);font-size:13px;color:var(--muted);white-space:nowrap;padding-top:3px;min-width:74px}
+.msg p{margin:0;font-size:18px;max-width:72ch}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 18px;border-top:1px solid var(--line)}
+button{font:inherit;font-weight:700;font-size:15px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 16px;cursor:pointer}
+button:hover{border-color:var(--ink)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--actual);outline-offset:2px}
+button.primary{background:var(--ink);color:var(--surface);border-color:var(--ink);min-width:118px}
+button:disabled{opacity:.4;cursor:default}
+.speed{display:flex;align-items:center;gap:8px;margin-left:auto;color:var(--muted);font-size:14px}
+.speed input{width:120px;accent-color:var(--actual)}
+.grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}.speed{margin-left:0}}
+.code{background:var(--code-bg);color:var(--code-ink);border-radius:14px;padding:16px 0;overflow-x:auto;min-width:0}
+.code h2,.side h2{font-family:var(--f-display);font-weight:600;font-size:18px;margin:0 0 10px}
+.code h2{padding:0 18px;color:var(--code-ink)}
+.code pre{margin:0;font-family:var(--f-mono);font-size:13.5px;line-height:1.7}
+.code .ln{display:block;padding:0 18px;border-left:4px solid transparent;white-space:pre}
+.code .ln.on{background:var(--code-hl);border-left-color:var(--actual)}
+.code .k{color:#8FB8E0}.code .c{color:#8C9AA6}
+.side{display:flex;flex-direction:column;gap:20px;min-width:0}
+.side .panel{padding:16px 18px}
+.side p{margin:0;font-size:15px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat b{display:block;font-family:var(--f-display);font-weight:800;font-size:40px;line-height:1;font-variant-numeric:tabular-nums}
+.stat span{font-size:14px;color:var(--muted)}
+.legend{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;font-size:15px}
+.legend li{display:flex;gap:10px;align-items:center}
+.sw{width:22px;height:22px;border-radius:5px;flex:none}
+.input-row{display:flex;flex-wrap:wrap;gap:8px}
+.input-row input{flex:1 1 200px;min-width:0;font:inherit;font-family:var(--f-mono);font-size:15px;padding:9px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink)}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.presets button{font-size:14px;padding:7px 12px}
+.err{color:var(--actual);font-size:14px;margin:8px 0 0;min-height:1em}
+footer{color:var(--muted);font-size:14px}
+@media (prefers-reduced-motion:reduce){.card{transition:none}}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Algoritmos de ordenación · 4to P</span>
+    <h1>Proxmap Sort paso a paso</h1>
+    <p class="lead">Primero calcula con una fórmula a qué cubeta va cada número, cuenta cuántos caen en cada una y arma el mapa de dónde empieza cada zona. Después ubica cada número directo en su zona, y solo compara cuando la zona ya tiene otro.</p>
+    <ul class="phases" id="phases">
+      <li data-ph="1">1 · MapKey</li><li data-ph="2">2 · HitCount</li><li data-ph="3">3 · ProxMap</li><li data-ph="4">4 · Ubicación</li>
+    </ul>
+  </header>
+
+  <section class="panel" aria-label="Animación del algoritmo">
+    <div class="stage-wrap"><div class="stage" id="stage"></div></div>
+    <div class="tables"><table id="tbl"></table></div>
+    <div class="msg" aria-live="polite"><span class="num" id="stepNum">Paso 0/0</span><p id="msg"></p></div>
+    <div class="controls">
+      <button id="btnReset" type="button">⟲ Reiniciar</button>
+      <button id="btnPrev" type="button">← Anterior</button>
+      <button id="btnPlay" type="button" class="primary">▶ Reproducir</button>
+      <button id="btnNext" type="button">Siguiente →</button>
+      <label class="speed" for="speed">Velocidad <input id="speed" type="range" min="1" max="7" step="1" value="4"></label>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="code" aria-label="Código en TypeScript">
+      <h2>El código que se está ejecutando</h2>
+      <pre id="code"></pre>
+    </section>
+    <div class="side">
+      <section class="panel">
+        <div class="stats">
+          <div class="stat"><b id="sComp">0</b><span>comparaciones</span></div>
+          <div class="stat"><b id="sShift">0</b><span>desplazamientos</span></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Colores</h2>
+        <ul class="legend">
+          <li><span class="sw" style="background:var(--pending)"></span>Número del arreglo original</li>
+          <li><span class="sw" style="background:var(--actual)"></span>El número que se está ubicando</li>
+          <li><span class="sw" style="background:var(--sorted)"></span>Ya ubicado en el arreglo final A2</li>
+          <li><span class="sw" style="background:var(--zone-a)"></span>Zona (cubeta) dentro de A2</li>
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Probá con tus números</h2>
+        <div class="input-row">
+          <input id="nums" type="text" inputmode="numeric" value="23, 7, 45, 12, 38, 3, 41, 19" aria-label="Números del 0 al 99 separados por coma">
+          <button id="btnLoad" type="button">Cargar</button>
+        </div>
+        <div class="presets">
+          <button type="button" data-preset="ejemplo">Ejemplo del TP</button>
+          <button type="button" data-preset="azar">Al azar</button>
+          <button type="button" data-preset="peor">Peor caso (todo en una cubeta)</button>
+        </div>
+        <p class="err" id="err"></p>
+        <p>MapKey = la decena del número: mapKey(x) = parte entera de x / 10. Usá números del 0 al 99, hasta 10 números.</p>
+      </section>
+    </div>
+  </div>
+  <footer>TP de Programación · Instituto Técnico Renault · Cuevas, Barondo, Romero y Viotto. Atajos: ← y → para moverte, espacio para reproducir. · <a href="./" style="color:var(--actual);font-weight:700">← Ver Insertion Sort</a></footer>
+</div>
+
+<script>
+(function(){
+  const CODE = [
+    '<span class="k">function</span> proxmapSort(a, cantCubetas, mapKey) {',
+    '  <span class="c">// Pasos 1 y 2: cubeta de cada clave y conteo</span>',
+    '  <span class="k">for</span> (<span class="k">let</span> i = 0; i &lt; n; i++) {',
+    '    location[i] = mapKey(a[i]);',
+    '    hitCount[location[i]]++;',
+    '  }',
+    '  <span class="c">// Paso 3: mapa de proximidad (suma acumulada)</span>',
+    '  <span class="k">let</span> total = 0;',
+    '  <span class="k">for</span> (<span class="k">let</span> c = 0; c &lt; cantCubetas; c++) {',
+    '    <span class="k">if</span> (hitCount[c] &gt; 0) { proxMap[c] = total; total += hitCount[c]; }',
+    '  }',
+    '  <span class="c">// Paso 4: ubicar cada clave en su zona de A2</span>',
+    '  <span class="k">for</span> (<span class="k">let</span> i = 0; i &lt; n; i++) {',
+    '    <span class="k">const</span> inicio = proxMap[location[i]];',
+    '    <span class="k">let</span> fin = inicio;',
+    '    <span class="k">while</span> (a2[fin] !== <span class="k">null</span>) fin++;   <span class="c">// primer lugar libre</span>',
+    '    <span class="k">let</span> j = fin - 1;',
+    '    <span class="k">while</span> (j &gt;= inicio &amp;&amp; a2[j] &gt; a[i]) {',
+    '      a2[j + 1] = a2[j]; j--;       <span class="c">// inserción en la zona</span>',
+    '    }',
+    '    a2[j + 1] = a[i];',
+    '  }',
+    '  <span class="k">return</span> a2;',
+    '}'
+  ];
+  const $ = id => document.getElementById(id);
+  const codeEl = $('code');
+  codeEl.innerHTML = CODE.map((l,k)=>'<span class="ln">'+l+'</span>').join('');
+  const lines = [...codeEl.querySelectorAll('.ln')];
+  const stage = $('stage');
+  let vals = [], K = 0, steps = [], cur = 0, timer = null;
+
+  function buildSteps(values){
+    const n = values.length;
+    K = Math.floor(Math.max(...values)/10) + 1;
+    const pos = values.map((v,id)=>({row:'A', slot:id}));
+    const loc = Array(n).fill(null), hit = Array(K).fill(0), prox = Array(K).fill(null);
+    const a2 = Array(n).fill(null);
+    let comps = 0, shifts = 0, zones = false, total = 0;
+    const out = [];
+    const push = o => out.push(Object.assign({
+      pos: pos.map(p=>({row:p.row, slot:p.slot})), loc:loc.slice(), hit:hit.slice(), prox:prox.slice(),
+      zones, comps, shifts, total, lifted:null, focus:null, cmp:null, scan:null, hlHit:null, hlProx:null, zoneHl:null, line:null, ph:0
+    }, o));
+    push({msg:'Arreglo original: ['+values.join(', ')+']. Como MapKey usamos la decena del número, así que hay '+K+' cubetas (de 0 a '+(K-1)+').'});
+    for(let i=0;i<n;i++){
+      const v = values[i], c = Math.floor(v/10);
+      loc[i] = c;
+      push({focus:i, line:3, ph:1, msg:'MapKey del '+v+': '+v+' / 10 = '+(v/10).toString().replace('.',',')+' → la parte entera es '+c+'. El '+v+' va a la cubeta '+c+'.'});
+      hit[c]++;
+      push({focus:i, hlHit:c, line:4, ph:2, msg:'Sumamos 1 al conteo de la cubeta '+c+': hitCount['+c+'] ahora vale '+hit[c]+'.'});
+    }
+    push({line:7, ph:3, msg:'Ya sabemos cuántos números hay en cada cubeta. Ahora armamos el mapa de proximidad empezando con total = 0.'});
+    for(let c=0;c<K;c++){
+      if(hit[c]>0){
+        prox[c] = total;
+        const t0 = total; total += hit[c];
+        push({hlHit:c, hlProx:c, zoneHl:c, zonesUpTo:c, line:9, ph:3,
+          msg:'Cubeta '+c+': empieza en la posición '+t0+' y ocupa '+hit[c]+' lugar'+(hit[c]>1?'es':'')+'. total pasa a '+t0+' + '+hit[c]+' = '+total+'.'});
+      } else {
+        push({hlHit:c, zonesUpTo:c, line:9, ph:3, msg:'Cubeta '+c+': no tiene números, no ocupa ningún lugar.'});
+      }
+    }
+    zones = true;
+    for(let i=0;i<n;i++){
+      const v = values[i], c = loc[i], inicio = prox[c];
+      pos[i] = {row:'L', slot:inicio};
+      push({lifted:i, zoneHl:c, hlProx:c, line:13, ph:4,
+        msg:'Tomamos el '+v+'. Es de la cubeta '+c+', y proxMap['+c+'] = '+inicio+': su zona empieza en la posición '+inicio+'.'});
+      let fin = inicio;
+      while(a2[fin]!==null){
+        push({lifted:i, zoneHl:c, scan:fin, line:15, ph:4, msg:'La posición '+fin+' ya está ocupada por el '+values[a2[fin]]+'. Avanzamos al siguiente lugar.'});
+        fin++; pos[i] = {row:'L', slot:fin};
+      }
+      if(fin>inicio) push({lifted:i, zoneHl:c, scan:fin, line:15, ph:4, msg:'La posición '+fin+' está libre. Ahora hay que ver si el '+v+' tiene que ir antes que los que ya están (inserción).'});
+      let j = fin-1, hole = fin;
+      while(j>=inicio){
+        const y = a2[j]; comps++;
+        if(values[y] > v){
+          push({lifted:i, zoneHl:c, cmp:y, line:17, ph:4, msg:'Comparamos: ¿'+values[y]+' > '+v+'? Sí. El '+values[y]+' tiene que correrse.'});
+          a2[j+1] = y; a2[j] = null; pos[y] = {row:'B', slot:j+1}; hole = j; pos[i] = {row:'L', slot:j}; shifts++; j--;
+          push({lifted:i, zoneHl:c, line:18, ph:4, msg:'Corremos el '+values[y]+' a la posición '+(j+2)+', dentro de la misma zona.'});
+        } else {
+          push({lifted:i, zoneHl:c, cmp:y, line:17, ph:4, msg:'Comparamos: ¿'+values[y]+' > '+v+'? No. El '+v+' va después del '+values[y]+'.'});
+          break;
+        }
+      }
+      a2[hole] = i; pos[i] = {row:'B', slot:hole};
+      push({zoneHl:c, line:20, ph:4, msg:'Dejamos el '+v+' en la posición '+hole+' de A2.'});
+    }
+    const res = a2.map(id=>values[id]);
+    push({line:22, ph:5, done:true, msg:'¡Listo! A2 = ['+res.join(', ')+']. Solo hicieron falta '+comps+' comparaciones y '+shifts+' desplazamientos.'});
+    return out;
+  }
+
+  const Y_A = 22, Y_TAG = 84, Y_L = 150, Y_B = 252, Y_IDX = 312, Y_Z = 330;
+  let cardEls=[], ghostEls=[], bslotEls=[], tagEls=[], idxEls=[], zoneEls=[], zlabelEls=[], W=60, gap=10, off=0;
+  function buildStage(){
+    stage.innerHTML='';
+    const lab = (t,y)=>{const d=document.createElement('div'); d.className='rowlabel'; d.textContent=t; d.style.top=y+'px'; stage.appendChild(d);};
+    lab('Arreglo original A', 0); lab('Arreglo final A2', Y_B-32);
+    zoneEls = []; zlabelEls = [];
+    for(let c=0;c<K;c++){
+      const z=document.createElement('div'); z.className='zone'; z.style.background = c%2? 'var(--zone-b)':'var(--zone-a)'; stage.appendChild(z); zoneEls.push(z);
+      const l=document.createElement('div'); l.className='zlabel'; l.textContent='cubeta '+c; stage.appendChild(l); zlabelEls.push(l);
+    }
+    ghostEls = vals.map(()=>{const g=document.createElement('div'); g.className='ghost'; stage.appendChild(g); return g;});
+    tagEls = vals.map(()=>{const t=document.createElement('div'); t.className='ctag'; stage.appendChild(t); return t;});
+    bslotEls = vals.map(()=>{const b=document.createElement('div'); b.className='bslot'; stage.appendChild(b); return b;});
+    idxEls = vals.map((v,k)=>{const t=document.createElement('div'); t.className='idx'; t.textContent=k; stage.appendChild(t); return t;});
+    cardEls = vals.map(v=>{const d=document.createElement('div'); d.className='card pending'; d.textContent=v; stage.appendChild(d); return d;});
+    buildTable(); layout();
+  }
+  function buildTable(){
+    let h = '<tr><th class="rl">Cubeta</th>'; for(let c=0;c<K;c++) h+='<th>'+c+'</th>'; h+='</tr>';
+    h += '<tr><th class="rl">HitCount</th>'; for(let c=0;c<K;c++) h+='<td id="h'+c+'"></td>'; h+='</tr>';
+    h += '<tr><th class="rl">ProxMap</th>'; for(let c=0;c<K;c++) h+='<td id="p'+c+'"></td>'; h+='</tr>';
+    $('tbl').innerHTML = h;
+  }
+  const X = k => off + k*(W+gap);
+  function layout(){
+    const n = vals.length, width = stage.clientWidth;
+    gap = n > 8 ? 6 : 10;
+    W = Math.min(84, Math.floor((width - gap*(n-1))/n));
+    off = Math.max(0, (width - (W*n + gap*(n-1)))/2);
+    const fs = (W<40?14:20)+'px';
+    cardEls.forEach(el=>{el.style.width=W+'px'; el.style.fontSize=fs;});
+    ghostEls.forEach((g,k)=>{g.style.width=W+'px'; g.style.left=X(k)+'px'; g.style.top=Y_A+'px';});
+    tagEls.forEach((t,k)=>{t.style.width=W+'px'; t.style.left=X(k)+'px'; t.style.top=Y_TAG+'px'; t.style.fontSize=(W<48?11:13)+'px';});
+    bslotEls.forEach((b,k)=>{b.style.width=W+'px'; b.style.left=X(k)+'px'; b.style.top=Y_B+'px';});
+    idxEls.forEach((t,k)=>{t.style.width=W+'px'; t.style.left=X(k)+'px'; t.style.top=Y_IDX+'px';});
+    render();
+  }
+
+  function render(){
+    const s = steps[cur]; if(!s) return;
+    const n = vals.length;
+    s.pos.forEach((p,id)=>{
+      const el = cardEls[id];
+      const y = p.row==='A' ? Y_A : p.row==='L' ? Y_L : Y_B;
+      el.style.transform = 'translate('+X(p.slot)+'px,'+y+'px)';
+      let cls = 'card ' + (p.row==='A' ? 'pending' : p.row==='L' ? 'actual' : 'sorted');
+      if(s.focus===id || s.cmp===id) cls += ' focus';
+      el.className = cls;
+    });
+    tagEls.forEach((t,k)=>{ const c=s.loc[k]; t.textContent = c===null?'':(W<48?'c'+c:'cub. '+c); t.classList.toggle('on', c!==null); });
+    // zonas
+    for(let c=0;c<K;c++){
+      const z = zoneEls[c], l = zlabelEls[c];
+      const visible = s.prox[c]!==null && s.hit[c]>0 && (s.zones || (s.zonesUpTo!==undefined && c<=s.zonesUpTo) || s.ph>=4);
+      if(s.prox[c]!==null && s.hit[c]>0){
+        const a = s.prox[c], b = a + s.hit[c] - 1;
+        z.style.left = (X(a)-4)+'px'; z.style.width = (X(b)+W-X(a)+8)+'px'; z.style.top=(Y_B-6)+'px'; z.style.height='68px';
+        l.style.left = X(a)+'px'; l.style.width = (X(b)+W-X(a))+'px'; l.style.top = Y_Z+'px';
+        l.textContent = (X(b)+W-X(a)) < 70 ? 'c'+c : 'cubeta '+c;
+      }
+      z.classList.toggle('on', !!visible); l.classList.toggle('on', !!visible);
+      z.classList.toggle('hl', visible && s.zoneHl===c);
+    }
+    bslotEls.forEach((b,k)=>b.classList.toggle('scan', s.scan===k));
+    for(let c=0;c<K;c++){
+      const hc=$('h'+c), pc=$('p'+c);
+      hc.textContent = s.hit[c]; hc.classList.toggle('hl', s.hlHit===c);
+      const pv = s.prox[c];
+      const shown = pv!==null || (s.zonesUpTo!==undefined && c<=s.zonesUpTo) || s.zones;
+      pc.textContent = pv!==null ? pv : (shown ? '—' : '');
+      pc.classList.toggle('empty', pv===null); pc.classList.toggle('hl', s.hlProx===c);
+    }
+    document.querySelectorAll('#phases li').forEach(li=>li.classList.toggle('on', +li.dataset.ph===s.ph));
+    lines.forEach((l,k)=>l.classList.toggle('on', k===s.line));
+    $('msg').textContent = s.msg;
+    $('stepNum').textContent = 'Paso '+cur+'/'+(steps.length-1);
+    $('sComp').textContent = s.comps; $('sShift').textContent = s.shifts;
+    $('btnPrev').disabled = cur===0; $('btnNext').disabled = cur===steps.length-1;
+  }
+
+  const SPEEDS = [1600,1100,750,500,300,170,80];
+  function applySpeed(){ const ms=SPEEDS[$('speed').value-1]; document.documentElement.style.setProperty('--dur', Math.min(450, Math.round(ms*0.8))+'ms'); }
+  $('speed').addEventListener('input', applySpeed); applySpeed();
+  function play(){
+    if(cur===steps.length-1) cur=0;
+    $('btnPlay').textContent='❚❚ Pausa';
+    const tick=()=>{ if(cur<steps.length-1){cur++;render();timer=setTimeout(tick,SPEEDS[$('speed').value-1]);} else stop(); };
+    timer=setTimeout(tick,80);
+  }
+  function stop(){ clearTimeout(timer); timer=null; $('btnPlay').textContent='▶ Reproducir'; }
+  function load(v){ stop(); vals=v; steps=buildSteps(v); cur=0; buildStage(); }
+
+  function parse(txt){
+    const nums = txt.split(/[\s,;]+/).filter(Boolean).map(Number);
+    if(nums.some(v=>!Number.isInteger(v))) return 'Escribí solo números enteros separados por coma, por ejemplo: 23, 7, 45.';
+    if(nums.length<2) return 'Poné al menos 2 números.';
+    if(nums.length>10) return 'Usá hasta 10 números para que se vea bien.';
+    if(nums.some(v=>v<0||v>99)) return 'Usá números del 0 al 99.';
+    return nums;
+  }
+  function tryLoad(){ const r=parse($('nums').value); if(typeof r==='string'){$('err').textContent=r;return;} $('err').textContent=''; load(r); }
+
+  $('btnPlay').onclick = ()=> timer ? stop() : play();
+  $('btnNext').onclick = ()=>{ stop(); if(cur<steps.length-1){cur++;render();} };
+  $('btnPrev').onclick = ()=>{ stop(); if(cur>0){cur--;render();} };
+  $('btnReset').onclick = ()=>{ stop(); cur=0; render(); };
+  $('btnLoad').onclick = tryLoad;
+  $('nums').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLoad(); });
+  document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{
+    const p=b.dataset.preset; let v;
+    if(p==='ejemplo') v=[23,7,45,12,38,3,41,19];
+    if(p==='azar') v=Array.from({length:8},()=>Math.floor(Math.random()*60));
+    if(p==='peor') v=[44,43,42,41,40];
+    $('nums').value=v.join(', '); $('err').textContent=''; load(v);
+  });
+  document.addEventListener('keydown', e=>{
+    if(e.target.tagName==='INPUT') return;
+    if(e.key==='ArrowRight'){e.preventDefault();$('btnNext').click();}
+    if(e.key==='ArrowLeft'){e.preventDefault();$('btnPrev').click();}
+    if(e.key===' '){e.preventDefault();$('btnPlay').click();}
+  });
+  let rt; window.addEventListener('resize', ()=>{clearTimeout(rt); rt=setTimeout(layout,120);});
+
+  load([23,7,45,12,38,3,41,19]);
+})();
+</script>
+</body></html>

@@ -1,0 +1,330 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insertion Sort paso a paso</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: una "mesa de trabajo" — escenario con cartulinas arriba, explicación y controles debajo, código y contadores al costado */
+:root{
+  --bg:#E9EEF2; --surface:#F8FAFB; --ink:#16202B; --muted:#56636F; --line:#CBD4DC;
+  --sorted:#2D5C8A; --sorted-ink:#F3F7FA;
+  --pending:#F2D57E; --pending-ink:#3A2E0B;
+  --actual:#E0683A; --actual-ink:#1D0E07;
+  --compare:#16202B; --code-bg:#16202B; --code-ink:#DCE5EC; --code-hl:#E0683A33;
+  --f-display:'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+  --f-body:'Atkinson Hyperlegible', Verdana, sans-serif;
+  --f-mono:'JetBrains Mono', 'Courier New', monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10161D; --surface:#18212B; --ink:#E6ECF1; --muted:#9AA8B5; --line:#2C3946;
+  --sorted:#4F86BE; --sorted-ink:#0C1520; --pending:#D9BC62; --pending-ink:#241C05;
+  --actual:#F08452; --actual-ink:#1D0E07; --compare:#E6ECF1; --code-bg:#0B1016; --code-ink:#DCE5EC; --code-hl:#F0845238;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10161D; --surface:#18212B; --ink:#E6ECF1; --muted:#9AA8B5; --line:#2C3946;
+  --sorted:#4F86BE; --sorted-ink:#0C1520; --pending:#D9BC62; --pending-ink:#241C05;
+  --actual:#F08452; --actual-ink:#1D0E07; --compare:#E6ECF1; --code-bg:#0B1016; --code-ink:#DCE5EC; --code-hl:#F0845238;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:28px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--actual)}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(32px,5vw,52px);line-height:1.05;margin:0;text-wrap:balance}
+.lead{margin:0;max-width:65ch;color:var(--muted);font-size:17px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.stage-wrap{padding:18px 18px 10px}
+.stage{position:relative;height:350px;width:100%}
+.card{position:absolute;bottom:56px;left:0;border-radius:8px 8px 4px 4px;display:flex;align-items:flex-start;justify-content:center;
+  font-family:var(--f-mono);font-weight:600;font-size:20px;padding-top:8px;
+  transition:transform var(--dur,.45s) cubic-bezier(.3,.7,.3,1), background-color .3s, box-shadow .3s;
+  box-shadow:0 2px 0 rgba(0,0,0,.12)}
+.card.pending{background:var(--pending);color:var(--pending-ink)}
+.card.sorted{background:var(--sorted);color:var(--sorted-ink)}
+.card.actual{background:var(--actual);color:var(--actual-ink);box-shadow:0 10px 18px rgba(0,0,0,.22)}
+.card.comparing{outline:3px solid var(--compare);outline-offset:3px}
+.slot{position:absolute;bottom:28px;height:22px;text-align:center;font-family:var(--f-mono);font-size:13px;color:var(--muted);border-top:2px solid var(--line);padding-top:2px}
+.slot.hole{border-top:2px dashed var(--actual);color:var(--actual)}
+.ptr{position:absolute;bottom:0;height:24px;text-align:center;font-family:var(--f-mono);font-weight:600;font-size:15px;transition:transform var(--dur,.45s) cubic-bezier(.3,.7,.3,1), opacity .2s}
+.ptr.i{color:var(--actual)} .ptr.j{color:var(--ink)}
+.divider{position:absolute;top:70px;bottom:28px;width:0;border-left:2px dashed var(--muted);transition:transform var(--dur,.45s) cubic-bezier(.3,.7,.3,1);opacity:.6}
+.actual-tag{position:absolute;top:0;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--actual);text-align:center;transition:transform var(--dur,.45s) cubic-bezier(.3,.7,.3,1), opacity .2s}
+.msg{padding:16px 18px;display:flex;gap:14px;align-items:flex-start;border-top:1px solid var(--line)}
+.msg .num{font-family:var(--f-mono);font-size:13px;color:var(--muted);white-space:nowrap;padding-top:3px;min-width:74px}
+.msg p{margin:0;font-size:18px;max-width:70ch}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 18px;border-top:1px solid var(--line)}
+button{font:inherit;font-weight:700;font-size:15px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 16px;cursor:pointer}
+button:hover{border-color:var(--ink)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--actual);outline-offset:2px}
+button.primary{background:var(--ink);color:var(--surface);border-color:var(--ink);min-width:118px}
+button:disabled{opacity:.4;cursor:default}
+.speed{display:flex;align-items:center;gap:8px;margin-left:auto;color:var(--muted);font-size:14px}
+.speed input{width:120px;accent-color:var(--actual)}
+.grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}.speed{margin-left:0}}
+.code{background:var(--code-bg);color:var(--code-ink);border-radius:14px;padding:16px 0;overflow-x:auto;min-width:0}
+.code h2,.side h2{font-family:var(--f-display);font-weight:600;font-size:18px;margin:0 0 10px}
+.code h2{padding:0 18px;color:var(--code-ink)}
+.code pre{margin:0;font-family:var(--f-mono);font-size:14px;line-height:1.75}
+.code .ln{display:block;padding:0 18px;border-left:4px solid transparent;white-space:pre}
+.code .ln.on{background:var(--code-hl);border-left-color:var(--actual)}
+.code .k{color:#8FB8E0}.code .c{color:#8C9AA6}
+.side{display:flex;flex-direction:column;gap:20px;min-width:0}
+.side .panel{padding:16px 18px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat b{display:block;font-family:var(--f-display);font-weight:800;font-size:40px;line-height:1;font-variant-numeric:tabular-nums}
+.stat span{font-size:14px;color:var(--muted)}
+.legend{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;font-size:15px}
+.legend li{display:flex;gap:10px;align-items:center}
+.sw{width:22px;height:22px;border-radius:5px;flex:none}
+.input-row{display:flex;flex-wrap:wrap;gap:8px}
+.input-row input{flex:1 1 200px;min-width:0;font:inherit;font-family:var(--f-mono);font-size:15px;padding:9px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink)}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.presets button{font-size:14px;padding:7px 12px}
+.err{color:var(--actual);font-size:14px;margin:8px 0 0;min-height:1em}
+footer{color:var(--muted);font-size:14px}
+@media (prefers-reduced-motion:reduce){.card,.ptr,.divider,.actual-tag{transition:none}}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Algoritmos de ordenación · 4to P</span>
+    <h1>Insertion Sort paso a paso</h1>
+    <p class="lead">Cada vuelta toma el primer número de la parte sin ordenar, lo levanta, corre a la derecha los mayores que él y lo deja en el hueco que queda. Usá los botones para verlo de a un paso o en automático.</p>
+  </header>
+
+  <section class="panel" aria-label="Animación del algoritmo">
+    <div class="stage-wrap"><div class="stage" id="stage"></div></div>
+    <div class="msg" aria-live="polite"><span class="num" id="stepNum">Paso 0/0</span><p id="msg"></p></div>
+    <div class="controls">
+      <button id="btnReset" type="button">⟲ Reiniciar</button>
+      <button id="btnPrev" type="button">← Anterior</button>
+      <button id="btnPlay" type="button" class="primary">▶ Reproducir</button>
+      <button id="btnNext" type="button">Siguiente →</button>
+      <label class="speed" for="speed">Velocidad <input id="speed" type="range" min="1" max="7" step="1" value="5"></label>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="code" aria-label="Código en TypeScript">
+      <h2>El código que se está ejecutando</h2>
+      <pre id="code"></pre>
+    </section>
+    <div class="side">
+      <section class="panel">
+        <div class="stats">
+          <div class="stat"><b id="sComp">0</b><span>comparaciones</span></div>
+          <div class="stat"><b id="sShift">0</b><span>desplazamientos</span></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Colores</h2>
+        <ul class="legend">
+          <li><span class="sw" style="background:var(--sorted)"></span>Parte ya ordenada</li>
+          <li><span class="sw" style="background:var(--pending)"></span>Falta ordenar</li>
+          <li><span class="sw" style="background:var(--actual)"></span>“actual”: el número que se está insertando</li>
+          <li><span class="sw" style="background:var(--surface);outline:3px solid var(--compare);outline-offset:-3px"></span>Número con el que se compara</li>
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Probá con tus números</h2>
+        <div class="input-row">
+          <input id="nums" type="text" inputmode="numeric" value="5, 2, 4, 6, 1, 3" aria-label="Números separados por coma">
+          <button id="btnLoad" type="button">Cargar</button>
+        </div>
+        <div class="presets">
+          <button type="button" data-preset="ejemplo">Ejemplo del TP</button>
+          <button type="button" data-preset="azar">Al azar</button>
+          <button type="button" data-preset="peor">Peor caso (al revés)</button>
+          <button type="button" data-preset="mejor">Mejor caso (ordenado)</button>
+        </div>
+        <p class="err" id="err"></p>
+      </section>
+    </div>
+  </div>
+  <footer>TP de Programación · Instituto Técnico Renault · Cuevas, Barondo, Romero y Viotto. Atajos: ← y → para moverte, espacio para reproducir. · <a href="proxmap.html" style="color:var(--actual);font-weight:700">Ver Proxmap Sort →</a></footer>
+</div>
+
+<script>
+(function(){
+  const CODE = [
+    '<span class="k">function</span> insertionSort(arr: number[]): number[] {',
+    '  <span class="k">for</span> (<span class="k">let</span> i = 1; i &lt; arr.length; i++) {',
+    '    <span class="k">const</span> actual = arr[i];    <span class="c">// lo levantamos</span>',
+    '    <span class="k">let</span> j = i - 1;',
+    '    <span class="k">while</span> (j &gt;= 0 &amp;&amp; arr[j] &gt; actual) {',
+    '      arr[j + 1] = arr[j];       <span class="c">// corre el mayor</span>',
+    '      j--;',
+    '    }',
+    '    arr[j + 1] = actual;       <span class="c">// lo dejamos en el hueco</span>',
+    '  }',
+    '  <span class="k">return</span> arr;',
+    '}'
+  ];
+  const codeEl = document.getElementById('code');
+  codeEl.innerHTML = CODE.map((l,k)=>'<span class="ln" data-l="'+k+'">'+l+'</span>').join('');
+  const lines = [...codeEl.querySelectorAll('.ln')];
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage');
+  let cards = [], steps = [], cur = 0, timer = null;
+
+  function buildSteps(values){
+    const n = values.length;
+    cards = values.map((v,k)=>({id:k, v}));
+    let slots = cards.map(c=>c.id);
+    let comps = 0, shifts = 0;
+    const out = [];
+    const push = (o) => out.push(Object.assign({slots:slots.slice(), comps, shifts}, o));
+    push({lifted:null, hole:null, cmp:null, i:null, j:null, sorted:1, line:null,
+      msg:'Arreglo inicial: ['+values.join(', ')+']. El primer número solo ya forma la parte ordenada (azul).'});
+    for(let i=1;i<n;i++){
+      const lifted = slots[i]; const x = cards[lifted].v;
+      slots[i] = null; let hole = i;
+      push({lifted, hole, cmp:null, i, j:null, sorted:i, line:2,
+        msg:'Vuelta '+i+': levantamos el '+x+' (posición '+i+') y lo guardamos en “actual”. Su lugar queda como un hueco.'});
+      let j = i-1;
+      push({lifted, hole, cmp:null, i, j, sorted:i, line:3, msg:'Empezamos a comparar con el de su izquierda: j = '+j+'.'});
+      while(j>=0){
+        const y = cards[slots[j]].v; comps++;
+        if(y > x){
+          push({lifted, hole, cmp:slots[j], i, j, sorted:i, line:4,
+            msg:'Comparamos: ¿'+y+' > '+x+'? Sí, el '+y+' es mayor.'});
+          slots[j+1] = slots[j]; slots[j] = null; hole = j; shifts++;
+          push({lifted, hole, cmp:slots[j+1], i, j, sorted:i, line:5,
+            msg:'Corremos el '+y+' un lugar a la derecha (a la posición '+(j+1)+'). El hueco se mueve a la posición '+j+'.'});
+          j--;
+          push({lifted, hole, cmp:null, i, j, sorted:i, line:6,
+            msg: j>=0 ? 'Bajamos j a '+j+' para mirar el siguiente de la izquierda.' : 'j queda en −1: llegamos al principio del arreglo.'});
+        } else {
+          push({lifted, hole, cmp:slots[j], i, j, sorted:i, line:4,
+            msg:'Comparamos: ¿'+y+' > '+x+'? No. El '+y+' es menor o igual, así que nos detenemos.'});
+          break;
+        }
+      }
+      slots[hole] = lifted;
+      push({lifted:null, hole:null, cmp:null, i, j, sorted:i+1, line:8, placed:lifted,
+        msg:'Dejamos el '+x+' en el hueco (posición '+hole+'). Ahora las posiciones 0 a '+i+' están ordenadas.'});
+    }
+    const res = slots.map(id=>cards[id].v);
+    push({lifted:null, hole:null, cmp:null, i:null, j:null, sorted:n, line:10, done:true,
+      msg:'¡Listo! Resultado: ['+res.join(', ')+']. Hicimos '+comps+' comparaciones y '+shifts+' desplazamientos.'});
+    return out;
+  }
+
+  let cardEls = [], slotEls = [], ptrI, ptrJ, divider, tag;
+  function buildStage(){
+    stage.innerHTML = '';
+    divider = document.createElement('div'); divider.className='divider'; stage.appendChild(divider);
+    tag = document.createElement('div'); tag.className='actual-tag'; tag.textContent='actual'; stage.appendChild(tag);
+    slotEls = cards.map((c,k)=>{const s=document.createElement('div'); s.className='slot'; s.textContent=k; stage.appendChild(s); return s;});
+    cardEls = cards.map(c=>{const d=document.createElement('div'); d.className='card pending'; d.textContent=c.v; stage.appendChild(d); return d;});
+    ptrI = document.createElement('div'); ptrI.className='ptr i'; ptrI.textContent='▲ i'; stage.appendChild(ptrI);
+    ptrJ = document.createElement('div'); ptrJ.className='ptr j'; ptrJ.textContent='▲ j'; stage.appendChild(ptrJ);
+    layout();
+  }
+
+  let W=60, gap=10, offset=0, maxV=1;
+  function layout(){
+    const n = cards.length, width = stage.clientWidth;
+    gap = n > 9 ? 6 : 10;
+    W = Math.min(84, Math.floor((width - gap*(n-1)) / n));
+    offset = Math.max(0, (width - (W*n + gap*(n-1)))/2);
+    maxV = Math.max(...cards.map(c=>Math.abs(c.v)), 1);
+    cardEls.forEach((el,k)=>{
+      el.style.width = W+'px';
+      el.style.height = Math.round(46 + 150*Math.abs(cards[k].v)/maxV)+'px';
+      el.style.fontSize = (W<44?15:20)+'px';
+    });
+    [slotEls].flat().forEach((s,k)=>{s.style.width=W+'px'; s.style.left=(offset+k*(W+gap))+'px';});
+    [ptrI,ptrJ,tag].forEach(p=>p.style.width=W+'px');
+    render(false);
+  }
+  const X = k => offset + k*(W+gap);
+
+  function render(){
+    const s = steps[cur]; if(!s) return;
+    const bound = s.lifted!==null ? s.i+1 : s.sorted;
+    s.slots.forEach((id,k)=>{
+      if(id===null) return;
+      const el = cardEls[id];
+      el.style.transform = 'translate('+X(k)+'px,0)';
+      el.className = 'card ' + (k < bound || s.done ? 'sorted' : 'pending') + (s.cmp===id?' comparing':'');
+    });
+    if(s.lifted!==null){
+      const el = cardEls[s.lifted];
+      el.style.transform = 'translate('+X(s.hole)+'px,-64px)';
+      el.className = 'card actual';
+      const top = stage.clientHeight - 56 - el.offsetHeight - 64 - 24;
+      tag.style.opacity = 1; tag.style.transform = 'translate('+X(s.hole)+'px,'+Math.max(0,top)+'px)';
+    } else { tag.style.opacity = 0; }
+    slotEls.forEach((el,k)=>el.classList.toggle('hole', s.hole===k));
+    const showDiv = !s.done && bound < cards.length;
+    divider.style.opacity = showDiv ? .6 : 0;
+    divider.style.transform = 'translateX('+(X(bound) - gap/2)+'px)';
+    ptrI.style.opacity = s.i===null ? 0 : 1; if(s.i!==null) ptrI.style.transform='translateX('+X(s.i)+'px)';
+    const jOk = s.j!==null && s.j>=0 && !s.placed;
+    ptrJ.style.opacity = jOk ? 1 : 0; if(jOk) ptrJ.style.transform='translateX('+X(s.j)+'px)';
+    if(jOk && s.i===s.j) ptrJ.style.opacity = 0;
+    lines.forEach((l,k)=>l.classList.toggle('on', k===s.line));
+    $('msg').textContent = s.msg;
+    $('stepNum').textContent = 'Paso '+cur+'/'+(steps.length-1);
+    $('sComp').textContent = s.comps; $('sShift').textContent = s.shifts;
+    $('btnPrev').disabled = cur===0; $('btnNext').disabled = cur===steps.length-1;
+  }
+
+  const SPEEDS = [1400,900,600,400,250,140,70];
+  function applySpeed(){ const ms=SPEEDS[$('speed').value-1]; document.documentElement.style.setProperty('--dur', Math.min(450, Math.round(ms*0.8))+'ms'); }
+  $('speed').addEventListener('input', applySpeed); applySpeed();
+  function play(){
+    if(cur===steps.length-1) cur=0;
+    $('btnPlay').textContent='❚❚ Pausa';
+    const tick=()=>{ if(cur<steps.length-1){cur++;render();timer=setTimeout(tick,SPEEDS[$('speed').value-1]);} else stop(); };
+    timer=setTimeout(tick, 80);
+  }
+  function stop(){ clearTimeout(timer); timer=null; $('btnPlay').textContent='▶ Reproducir'; }
+  function load(values){ stop(); steps = buildSteps(values); cur = 0; buildStage(); }
+
+  function parse(txt){
+    const parts = txt.split(/[\s,;]+/).filter(Boolean);
+    const nums = parts.map(Number);
+    if(nums.some(v=>!Number.isFinite(v))) return 'Escribí solo números separados por coma, por ejemplo: 5, 2, 4.';
+    if(nums.length<2) return 'Poné al menos 2 números.';
+    if(nums.length>12) return 'Usá hasta 12 números para que se vea bien.';
+    if(nums.some(v=>Math.abs(v)>999)) return 'Usá números entre −999 y 999.';
+    return nums;
+  }
+  function tryLoad(){
+    const r = parse($('nums').value);
+    if(typeof r==='string'){ $('err').textContent=r; return; }
+    $('err').textContent=''; load(r);
+  }
+
+  $('btnPlay').onclick = ()=> timer ? stop() : play();
+  $('btnNext').onclick = ()=>{ stop(); if(cur<steps.length-1){cur++;render();} };
+  $('btnPrev').onclick = ()=>{ stop(); if(cur>0){cur--;render();} };
+  $('btnReset').onclick = ()=>{ stop(); cur=0; render(); };
+  $('btnLoad').onclick = tryLoad;
+  $('nums').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLoad(); });
+  document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{
+    const p=b.dataset.preset; let v;
+    if(p==='ejemplo') v=[5,2,4,6,1,3];
+    if(p==='azar') v=Array.from({length:8},()=>1+Math.floor(Math.random()*40));
+    if(p==='peor') v=[8,7,6,5,4,3,2,1];
+    if(p==='mejor') v=[1,2,3,4,5,6,7,8];
+    $('nums').value=v.join(', '); $('err').textContent=''; load(v);
+  });
+  document.addEventListener('keydown', e=>{
+    if(e.target.tagName==='INPUT') return;
+    if(e.key==='ArrowRight'){ e.preventDefault(); $('btnNext').click(); }
+    if(e.key==='ArrowLeft'){ e.preventDefault(); $('btnPrev').click(); }
+    if(e.key===' '){ e.preventDefault(); $('btnPlay').click(); }
+  });
+  let rt; window.addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(layout,120); });
+
+  load([5,2,4,6,1,3]);
+})();
+</script>
+</body></html>
